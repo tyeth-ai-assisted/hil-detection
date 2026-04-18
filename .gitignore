@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.eggs/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Real credentials — never commit
+tests/credentials.py
+
+# Editor/OS
+.DS_Store
+.vscode/
+*.swp
+*.swo
