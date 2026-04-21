@@ -1,118 +1,193 @@
-# Hardware Reference — pico-hil-flash
+# Hardware Reference — hil-detection bench
 
-## Display Bench (rpi-displays)
+## Bench Hosts
 
-| Component | Detail |
-|-----------|--------|
-| Host Pi | Pi Zero 2W — `rpi-displays` — `192.168.1.234` (SSH: pi/sjahse98) |
-| ProtoMQ/MQTT | Pi 5 — `192.168.1.210`, MQTT port 1884, web UI port 5173 |
-| USB Hub | Genesys Logic (05e3:0610), dual-cascaded on rpi-displays |
-| Solenoid controller | MCP23017 at I2C 0x20 — 8-channel solenoid driver (Adafruit) |
-| Camera | Arducam 16MP IMX519 on Pi Zero 2W CSI — `dtoverlay=imx519` |
+| Host | Role | IP | SSH |
+|------|------|----|-----|
+| Pi Zero 2W (rpi-displays) | DUT hub controller, USB switch | 192.168.1.234 | pi/sjahse98 (also root — both have passwordless tachyon keys) |
+| Pi 5 (ProtoMQ) | MQTT broker | 192.168.1.210 | MQTT port 1884, web UI port 5173 |
 
-### Solenoid → USB Port Map
+## USB Hub
 
-The solenoid controller can power-cycle individual USB ports. Use the `solenoid_power_cycle.py` helper (on rpi-displays) or SSH + i2cset directly.
+Genesys Logic (05e3:0610), dual-cascaded on rpi-displays.
 
-- **ch6** → Metro ESP32-S2 power control
-- Other channels → remaining DUT ports (update this table as you wire boards)
+## Solenoid Controller
 
-**Power cycle OFF sequence:** 200 ms ON → 500 ms OFF → 1000 ms ON → OFF  
-**Power cycle ON sequence:** 200 ms ON → 500 ms OFF → 200 ms ON → OFF
+MCP23017 at I2C address 0x20 — Adafruit 8-channel solenoid driver (product #6318).
 
-### Known Boards on rpi-displays
+Control scripts on rpi-displays:
+- `~/usb_hub.py` — parameterized timings, use for SAMD51 double-tap
+- `~/solenoid_hub_control.py` — standard fixed timings
 
-| Port | USB ID | /dev | Board |
-|------|--------|------|-------|
-| 1-1.3 | 239a:80df | /dev/ttyACM2 | Metro ESP32-S2 (WipperSnapper V1) |
-| — | — | /dev/ttyACM0 | QT Py ESP32-S3 |
-| — | — | /dev/ttyACM1 | Feather ESP32-S3 TFT |
+## Confirmed Channel Map (verified 2026-04-21)
 
-13 boards total on bench; each has a unique QR code (adafru.it URLs): 398, 1028, 2900, 3129, 4116, 4313, 4440, 4650, 4777, 4868, 5300, 5483, 5691.
+| Channel | Device | USB VID:PID | USB Serial | tty | Notes |
+|---------|--------|-------------|------------|-----|-------|
+| 0 | Adafruit QT Py ESP32-S3 (4MB Flash 2MB PSRAM) | 239a:8143 | — | ttyACM3 | Native USB CDC |
+| 1 | Adafruit Feather ESP32-S3 TFT | 239a:811d | — | ttyACM0 | Native USB CDC |
+| 2 | Adafruit Metro ESP32-S2 | 239a:80df | — | ttyACM1 | Native USB CDC |
+| 3 | Adafruit PyPortal M4 (ATSAMD51J20) | 239a:8035 | F1DF00AE5346513551202020FF171730 | — | BROKEN: crash loop error -110 on busid 1-1.2 |
+| 4 | Adafruit Huzzah ESP8266 | 10c4:ea60 (CP2104) | 0283D3AB | ttyUSB1 | UART bridge; no native USB |
+| 5 | Adafruit Huzzah32 ESP32 Feather v1 | 10c4:ea60 (CP2104) | 022AF71E | ttyUSB0 | UART bridge; no native USB |
+| 6 | Raspberry Pi Pico W (RP2040) | 239a:8120 (CP app) | E6614104030F7A24 | ttyACM2 | CircuitPython composite mode |
 
----
+> Note: ttyACM/ttyUSB assignments can shift on re-enumeration. Use `/dev/serial/by-id/` for stable references.
 
-## Pico USB IDs
+13 QR-coded boards on bench: adafru.it URLs 398, 1028, 2900, 3129, 4116, 4313, 4440, 4650, 4777, 4868, 5300, 5483, 5691.
 
-| Mode | VID | PID | Notes |
-|------|-----|-----|-------|
-| CircuitPython application (Pico W) | 239a | 8120 | CP running — ttyACM present |
-| CircuitPython UF2 bootloader (Pico W) | 239a | 8120 | Same PID! ttyACM present, also exposes mass storage |
-| WipperSnapper application (Pico W) | 239a | cafe | Adafruit WipperSnapper firmware |
-| Native BOOTSEL (RP2040) | 2e8a | 0003 | No ttyACM; picotool can flash here |
-| Native BOOTSEL (RP2350) | 2e8a | 000f | No ttyACM; picotool can flash here |
-| MicroPython application (RP2040) | 2e8a | 000a | MicroPython REPL mode |
-| MicroPython FS mode (RP2040) | 2e8a | 0005 | MicroPython Board in FS mode (Pico W v1.28+) |
+## Solenoid Timing
 
-### CircuitPython USB device modes (Pico W, confirmed 2026-04-18)
+Soft-latching toggle buttons. The timing encodes intent:
 
-CircuitPython runs as a **composite USB device** in application mode — it presents both CDC serial (REPL) and mass storage (CIRCUITPY drive) simultaneously, all under `239a:8120`.
+| Sequence | Purpose | Timing |
+|----------|---------|--------|
+| ON | Power port on | 200ms HIGH -> LOW |
+| OFF (standard) | Power port off | 200ms HIGH -> 500ms LOW -> 1000ms HIGH -> LOW |
+| OFF (SAMD51 double-tap) | Enter UF2 bootloader | 200ms HIGH -> 100ms LOW -> 300ms HIGH -> LOW |
 
-| State | VID:PID | ttyACM | Mass storage | Notes |
-|-------|---------|--------|--------------|-------|
-| CP application | 239a:8120 | ✅ REPL here | ✅ CIRCUITPY mounted | Normal running state |
-| Native BOOTSEL | 2e8a:0003 | ❌ | ✅ RPI-RP2 drive | picotool flashes here |
-| WipperSnapper app | 239a:cafe | ✅ | ❌ | Separate compiled firmware |
+Use `usb_hub.py` with `sleep_between=0.1, off_duration=0.3` for SAMD51 double-tap.
 
-**Key insight:** `239a:8120` with CIRCUITPY mounted = CP application running. The REPL is on the ttyACM port for that device. There is no separate "CP UF2 bootloader" state visible from the host — it's always composite when running.
+## RP2040 / RP2350 (Pico W)
 
-### CircuitPython reset chain (Pico W)
+### USB Device Modes
+
+| Mode | VID:PID | ttyACM | Mass Storage | Notes |
+|------|---------|--------|--------------|-------|
+| CircuitPython application | 239a:8120 | YES (REPL) | YES (CIRCUITPY) | Composite; serial + storage together |
+| Native BOOTSEL (RP2040) | 2e8a:0003 | NO | YES (RPI-RP2) | ROM-fixed; picotool flashes here |
+| Native BOOTSEL (RP2350) | 2e8a:000f | NO | YES (RPI-RP2) | ROM-fixed |
+| WipperSnapper application | 239a:cafe | YES | NO | Compiled firmware |
+| MicroPython application | 2e8a:000a | YES (REPL) | — | Does NOT honour 1200-baud sentinel |
+| MicroPython FS mode | 2e8a:0005 | YES | YES | Pico W v1.28+ |
+
+### Reset Chain (CircuitPython -> BOOTSEL -> flash -> application)
 
 ```
 CP application (239a:8120, ttyACM + CIRCUITPY)
-  → stty -F <ttyACM> 1200
-Native BOOTSEL (2e8a:0003, RPI-RP2 drive, no ttyACM)
-  → picotool load <firmware>
-  → picotool reboot -a
-CP application (239a:8120, ttyACM + CIRCUITPY) ← REPL + code.py output here
+  -> stty -F <ttyACM> 1200          # 1200-baud CDC sentinel
+  -> wait ~3s
+Native BOOTSEL (2e8a:0003, RPI-RP2, no ttyACM)
+  -> picotool load <firmware.uf2>
+  -> picotool reboot -a
+  -> wait ~3s
+CP application (239a:8120, ttyACM + CIRCUITPY)  <- REPL + code.py output here
 ```
 
-- One `stty 1200` kick is sufficient from CP application to native BOOTSEL
-- After `picotool reboot -a`, find the ttyACM port with VID `239a` PID `8120` — that is the REPL
-- Serial output (including `print()` from `code.py`) appears on that port at 115200 baud
-- Look for `Auto-reload is on` to confirm CP is running, then match your pass/fail pattern
+Key: `239a:8120` with CIRCUITPY mounted = CP running. One stty kick is sufficient.
 
-The 1200-baud reset trick works on **any** RP2040/RP2350 running firmware that implements the USB CDC 1200-baud sentinel (standard in MicroPython, CircuitPython, and the Pico C SDK tinyusb stack).
+### Three-Stage Reset Strategy (pico_hil_flash.sh)
 
----
+1. `picotool reboot -u -f` — force to BOOTSEL (works from most RP-series app firmware)
+2. `stty -F <port> 1200` — CDC sentinel (CircuitPython, WipperSnapper, C SDK tinyusb)
+3. `machine.bootloader()` via serial REPL — MicroPython fallback
+
+## ESP32 / ESP8266 (Huzzah32, Huzzah ESP8266)
+
+These boards use a CP2104 UART bridge (10c4:ea60) — there is no native USB.
+
+### Reset Approach
+
+- No 1200-baud CDC sentinel — CP2104 is a dumb UART bridge; SET_LINE_CODING is ignored
+- `esptool.py` handles reset automatically via DTR/RTS toggling
+- Basic check: `esptool.py --port /dev/ttyUSBx --chip auto flash_id`
+- Manual bootloader entry: hold BOOT/GPIO0 button, press RESET, release RESET, release BOOT
+- esptool.py auto-reset sequence: DTR->RST low, RTS->GPIO0 low, release RST, release GPIO0
+  - Works reliably on Huzzah32
+  - May need manual assist on Huzzah ESP8266 depending on board revision
+
+### Identifying by CP2104 Serial
+
+| CP2104 Serial | tty | Board |
+|---------------|-----|-------|
+| 0283D3AB | ttyUSB1 | Huzzah ESP8266 (ch4) |
+| 022AF71E | ttyUSB0 | Huzzah32 ESP32 Feather v1 (ch5) |
+
+Use `/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_<SERIAL>-if00-port0` for stable device references.
+
+### esptool.py Location
+
+Already installed on rpi-displays: `/home/pi/.local/bin/esptool.py`
+Also: `espsecure.py`, `espefuse.py` in same directory.
+
+## ESP32-Sx Native USB (Metro ESP32-S2, Feather ESP32-S3, QT Py ESP32-S3)
+
+These have native USB (no CP210x bridge) and enumerate directly as CDC ACM devices.
+
+- CDC 1200-baud sentinel works when running CircuitPython or WipperSnapper
+- For esptool.py bootloader mode: hold BOOT button -> press RESET (or power-cycle with BOOT held)
+- esptool.py auto-reset may work depending on firmware
+
+No USB serial numbers on these boards (iSerial empty).
+
+## SAMD51 (PyPortal M4 — channel 3)
+
+Board: Adafruit PyPortal M4 (ATSAMD51J20), USB serial F1DF00AE5346513551202020FF171730.
+
+**Current status: BROKEN** — crash-looping on busid 1-1.2 with error -110 (ETIMEDOUT). Does not enumerate successfully.
+
+### When healthy
+
+- UF2 bootloader: double-tap RESET within ~500ms -> UF2 drive appears
+- bossac: `bossac --info --port /dev/ttyACMx` (after entering bootloader)
+- UF2 drag-and-drop flashing also works
+
+### Double-tap timing with solenoid
+
+The SAMD51 double-tap window is ~500ms. Use `usb_hub.py`:
+
+```python
+from usb_hub import SolenoidHubController
+hub = SolenoidHubController()
+# First tap
+hub.port_off(3, sleep_between=0.1, off_duration=0.3)
+# Second tap immediately after (within 500ms)
+hub.port_on(3)
+```
+
+## Camera
+
+Arducam 16MP IMX519 on Pi Zero 2W CSI. Device tree: `dtoverlay=imx519`.
+AE settling: ~1.5s. Skip first 1.5s of any video capture.
 
 ## Tool Prerequisites
 
-| Tool | Install | Purpose |
-|------|---------|---------|
-| `picotool` | `sudo apt install picotool` or build from source | Erase, load, reboot |
+| Tool | Install / Location | Purpose |
+|------|--------------------|---------|
+| `picotool` | `/home/pi/picotool-2.2.0-a4/` (built from source) | Erase, load, reboot RP2040/RP2350 |
+| `esptool.py` | `/home/pi/.local/bin/esptool.py` | Flash ESP32/ESP8266 |
+| `bossac` | `sudo apt install bossac` | Flash SAMD51/SAMD21 |
 | `lsusb` | `sudo apt install usbutils` | USB enumeration |
-| `stty` | coreutils (always present) | 1200-baud reset |
-| `udevadm` | udev (always present) | Port VID matching |
+| `stty` | coreutils (always present) | 1200-baud CDC reset |
+| `udevadm` | udev (always present) | Port path resolution |
 
 ### picotool udev rule (avoids sudo)
 
 ```
-# /etc/udev/rules.d/99-pico.rules
 SUBSYSTEM=="usb", ATTRS{idVendor}=="2e8a", MODE="0666"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", MODE="0666"
 ```
 
-Reload with: `sudo udevadm control --reload-rules && sudo udevadm trigger`
-
----
-
-## Timing Notes
-
-- After 1200-baud reset: wait **~3 s** before expecting BOOTSEL enumeration
-- After `picotool reboot`: wait **~3 s** before expecting ttyACM to reappear
-- AE settling on Arducam: ~1.5 s (skip first 1.5 s of any video capture)
-- If the device doesn't enter BOOTSEL: try a solenoid power cycle first, then retry
-
----
+Reload: `sudo udevadm control --reload-rules && sudo udevadm trigger`
 
 ## Common Failure Modes
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `stty: cannot open /dev/ttyACMx` | Device not enumerated / wrong port | Check lsusb, solenoid power cycle |
-| `stty -F <port> 1200` has no effect | Firmware doesn't honour CDC sentinel | Power cycle the device via solenoid instead |
-| BOOTSEL device not found after reset | Firmware doesn't honour 1200-baud sentinel | Power cycle the device instead |
-| `picotool load` fails — no device found | Device still in application mode | Increase sleep after stty reset |
-| Serial output stops immediately | Wrong baud rate | Adjust `--baud` |
-| Timeout with no PASS/FAIL | Pattern mismatch or test hung | Check `--pass-pattern` / `--fail-pattern` regex |
+| `error -110` on lsusb for a port | USB enumeration timeout — device crash-looping | Power cycle via solenoid; may need firmware fix |
+| `stty: cannot open /dev/ttyACMx` | Device not enumerated or wrong port | Check lsusb, solenoid power cycle |
+| `esptool.py` cannot connect | Wrong port, or not in bootloader | Manual BOOT+RESET; check CP2104 serial number |
+| BOOTSEL not entered after stty 1200 | MicroPython ignores CDC sentinel | Power cycle via solenoid instead |
+| `picotool load` fails | Still in application mode | Increase sleep after stty reset |
+| bossac fails on PyPortal | Missing double-tap within 500ms window | Tune usb_hub.py sleep_between/off_duration |
+| Serial output stops | Wrong baud rate | Adjust --baud |
+| ttyACM/ttyUSB number wrong | Re-enumeration reordered ports | Use /dev/serial/by-id/ instead |
+
+## Timing Notes
+
+| Event | Wait |
+|-------|------|
+| After 1200-baud reset | ~3s before BOOTSEL enumeration |
+| After picotool reboot | ~3s before ttyACM reappears |
+| After solenoid power cycle | ~2s minimum (some devices longer) |
+| SAMD51 double-tap window | ~500ms — timing critical |
+| Arducam AE settling | ~1.5s — skip first 1.5s of video |

@@ -24,15 +24,20 @@ See `SKILL.md` for full options, and `references/hardware.md` for bench hardware
 
 ## Device support
 
-| Chip | BOOTSEL PID | Flash default |
-|------|------------|---------------|
-| RP2040 (Pico, Pico W) | `2e8a:0003` | 2MB |
-| RP2350A/B (Pico 2) | `2e8a:000f` | 4MB |
-| RP2354A/B (Pico 2 + PSRAM) | `2e8a:000f` | 4MB |
+| Chip | Flash tool | Notes |
+|------|-----------|-------|
+| RP2040 (Pico, Pico W) | picotool | BOOTSEL PID 2e8a:0003 |
+| RP2350A/B (Pico 2) | picotool | BOOTSEL PID 2e8a:000f |
+| RP2354A/B (Pico 2 + PSRAM) | picotool | BOOTSEL PID 2e8a:000f |
+| ESP32 / ESP8266 (CP2104 UART bridge) | esptool.py | Huzzah32, Huzzah ESP8266 on bench |
+| ESP32-Sx native USB | esptool.py | Metro ESP32-S2, Feather ESP32-S3, QT Py ESP32-S3 |
+| SAMD51 / SAMD21 | bossac | PyPortal M4 on bench (currently broken) |
 
 Application-mode VID:PID is never assumed — only ROM-fixed BOOTSEL PIDs are hardcoded.
 
+Use `usb_hub.py` for parameterized solenoid control — supports SAMD51 double-tap reset sequences.
+
 ## Future device families
 
-- ESP32/ESP8266 → `esptool.py`
-- SAMD51/SAMD21 → `bossac`
+- nRF52 → `nrfjprog` / `adafruit-nrfutil`
+- STM32 → `dfu-util` / `stm32flash`

@@ -1,6 +1,6 @@
 ---
 name: pico-hil-flash
-description: "Hardware-in-the-loop (HIL) flash and test workflow for Raspberry Pi Pico (RP2040/RP2350) and compatible boards on a display test bench. Use when a user wants to identify a Pico-class device via lsusb, reset it into BOOTSEL mode via 1200-baud stty sentinel, optionally erase flash with picotool, flash new firmware (UF2 or ELF), reboot into the application, and capture serial output until pass/fail criteria are matched or a timeout expires. Also use for any hardware-in-the-loop testing workflow involving USB-controlled DUTs on the rpi-displays bench (Pi Zero 2W at 192.168.1.234) with solenoid-controlled USB power switching. NOT for ESP32 targets, Wi-Fi OTA updates, or non-USB boards."
+description: "Hardware-in-the-loop (HIL) flash and test workflow for Raspberry Pi Pico (RP2040/RP2350) and compatible boards on a display test bench. Use when a user wants to identify a Pico-class device via lsusb, reset it into BOOTSEL mode via 1200-baud stty sentinel, optionally erase flash with picotool, flash new firmware (UF2 or ELF), reboot into the application, and capture serial output until pass/fail criteria are matched or a timeout expires. Also use for any hardware-in-the-loop testing workflow involving USB-controlled DUTs on the rpi-displays bench (Pi Zero 2W at 192.168.1.234) with solenoid-controlled USB power switching. NOT for: Wi-Fi OTA updates."
 ---
 
 # pico-hil-flash
@@ -54,8 +54,8 @@ Exit codes: `0` = PASS, `1` = FAIL, `2` = TIMEOUT.
 When a device won't enumerate or accept the 1200-baud reset, power-cycle its USB port via the solenoid controller. SSH to `rpi-displays` (192.168.1.234):
 
 ```bash
-# Power cycle Metro ESP32-S2 (solenoid ch6) — adapt channel for other boards
-ssh pi@192.168.1.234 "python3 ~/solenoid_power_cycle.py 6"
+# Power cycle Metro ESP32-S2 (solenoid ch2) — adapt channel for other boards
+ssh pi@192.168.1.234 "python3 ~/usb_hub.py 2"
 ```
 
 Then retry the flash script. See `references/hardware.md` for the full solenoid channel map and timing sequences.
