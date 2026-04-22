@@ -26,8 +26,8 @@ Control scripts on rpi-displays:
 | 0 | Adafruit QT Py ESP32-S3 (4MB Flash 2MB PSRAM) | 239a:8143 | — | ttyACM3 | Native USB CDC |
 | 1 | Adafruit Feather ESP32-S3 TFT | 239a:811d | — | ttyACM0 | Native USB CDC |
 | 2 | Adafruit Metro ESP32-S2 | 239a:80df | — | ttyACM1 | Native USB CDC |
-| 3 | Adafruit PyPortal M4 (ATSAMD51J20) | 239a:8035 | F1DF00AE5346513551202020FF171730 | — | BROKEN: crash loop error -110 on busid 1-1.2 |
-| 4 | Adafruit Huzzah ESP8266 | 10c4:ea60 (CP2104) | 0283D3AB | ttyUSB1 | UART bridge; no native USB |
+| 3 | UNCONFIRMED | — | — | — | Does not produce unique device on toggle test |
+| 4 | Adafruit PyPortal M4 Titano (ATSAMD51J20) | 239a:8053 (WS) / 239a:8054 (CP) / 239a:0035 (UF2) | F1DF00AE5346513551202020FF171730 | ttyACM0 | See PyPortal section below |
 | 5 | Adafruit Huzzah32 ESP32 Feather v1 | 10c4:ea60 (CP2104) | 022AF71E | ttyUSB0 | UART bridge; no native USB |
 | 6 | Raspberry Pi Pico W (RP2040) | 239a:8120 (CP app) | E6614104030F7A24 | ttyACM2 | CircuitPython composite mode |
 
@@ -99,7 +99,7 @@ These boards use a CP2104 UART bridge (10c4:ea60) — there is no native USB.
 
 | CP2104 Serial | tty | Board |
 |---------------|-----|-------|
-| 0283D3AB | ttyUSB1 | Huzzah ESP8266 (ch4) |
+| 0283D3AB | ttyUSB1 | Huzzah ESP8266 (channel TBD — verify assignment) |
 | 022AF71E | ttyUSB0 | Huzzah32 ESP32 Feather v1 (ch5) |
 
 Use `/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_<SERIAL>-if00-port0` for stable device references.
@@ -119,17 +119,45 @@ These have native USB (no CP210x bridge) and enumerate directly as CDC ACM devic
 
 No USB serial numbers on these boards (iSerial empty).
 
-## SAMD51 (PyPortal M4 — channel 3)
+## SAMD51 (PyPortal M4 Titano — channel 4)
 
-Board: Adafruit PyPortal M4 (ATSAMD51J20), USB serial F1DF00AE5346513551202020FF171730.
+Board: Adafruit PyPortal M4 Titano (ATSAMD51J20), USB serial F1DF00AE5346513551202020FF171730.
 
-**Current status: BROKEN** — crash-looping on busid 1-1.2 with error -110 (ETIMEDOUT). Does not enumerate successfully.
+### USB Device Modes
 
-### When healthy
+| Mode | VID:PID | ttyACM | Mass Storage | Notes |
+|------|---------|--------|--------------|-------|
+| WipperSnapper application | 239a:8053 | YES | YES (briefly) | "PyPortal M4 Titano" |
+| CircuitPython application | 239a:8054 | YES (REPL) | YES (CIRCUITPY) | "Adafruit PyPortal Titano" |
+| UF2 bootloader | 239a:0035 | YES (SAM-BA) | YES (8MB UF2 drive) | "PyPortal M4 Express" — same bootloader PID for Express and Titano |
 
-- UF2 bootloader: double-tap RESET within ~500ms -> UF2 drive appears
-- bossac: `bossac --info --port /dev/ttyACMx` (after entering bootloader)
-- UF2 drag-and-drop flashing also works
+### WipperSnapper Firmware Compatibility
+
+| Version | Status |
+|---------|--------|
+| beta.78 | WORKING — enumerates stably, connects to WiFi |
+| beta.126 | BROKEN — crash-loops with error -110 (USB enumeration timeout) |
+
+The beta.126 crash is at the USB driver level (before serial output), not a secrets.json issue.
+
+### Flashing SAMD51 — UF2 Only (bossac fails)
+
+**bossac 1.9.1 (Debian repo) cannot write SAMD51 flash.** Erase succeeds but write fails with "SAM-BA operation failed".
+
+**Use UF2 drag-and-drop instead** (must run as root on rpi-displays for stty permissions):
+
+```bash
+# UF2 flash sequence — run as root on rpi-displays
+stty -F /dev/ttyACM0 1200 cs8 -cstopb -parenb   # kick to bootloader
+sleep 3                                          # wait for /dev/sda
+mount -t vfat /dev/sda /mnt/pyportal
+cp firmware.uf2 /mnt/pyportal/flash.uf2
+sync && sync
+sleep 5                                          # bootloader flashes then reboots
+# FAT errors during umount are EXPECTED — bootloader drops the drive mid-flash
+```
+
+> **Note:** `stty` on /dev/ttyACM* requires root on rpi-displays. SSH as `root@192.168.1.234` (passwordless key auth from tachyon).
 
 ### Double-tap timing with solenoid
 
@@ -139,9 +167,9 @@ The SAMD51 double-tap window is ~500ms. Use `usb_hub.py`:
 from usb_hub import SolenoidHubController
 hub = SolenoidHubController()
 # First tap
-hub.port_off(3, sleep_between=0.1, off_duration=0.3)
+hub.port_off(4, sleep_between=0.1, off_duration=0.3)
 # Second tap immediately after (within 500ms)
-hub.port_on(3)
+hub.port_on(4)
 ```
 
 ## Camera
@@ -155,7 +183,7 @@ AE settling: ~1.5s. Skip first 1.5s of any video capture.
 |------|--------------------|---------|
 | `picotool` | `/home/pi/picotool-2.2.0-a4/` (built from source) | Erase, load, reboot RP2040/RP2350 |
 | `esptool.py` | `/home/pi/.local/bin/esptool.py` | Flash ESP32/ESP8266 |
-| `bossac` | `sudo apt install bossac` | Flash SAMD51/SAMD21 |
+| `bossac` | `sudo apt install bossac` | Flash SAMD21 only — **v1.9.1 fails on SAMD51**, use UF2 instead |
 | `lsusb` | `sudo apt install usbutils` | USB enumeration |
 | `stty` | coreutils (always present) | 1200-baud CDC reset |
 | `udevadm` | udev (always present) | Port path resolution |

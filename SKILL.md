@@ -60,17 +60,57 @@ ssh pi@192.168.1.234 "python3 ~/usb_hub.py 2"
 
 Then retry the flash script. See `references/hardware.md` for the full solenoid channel map and timing sequences.
 
+## Serial Capture
+
+Use `scripts/serial_monitor.py` for reliable serial capture during device re-enumeration:
+
+```bash
+# Auto-detect first available port, 60s timeout
+python3 scripts/serial_monitor.py
+
+# Specific port, log to file, indefinite timeout
+python3 scripts/serial_monitor.py --port /dev/ttyACM0 --log-file output.log --timeout 0
+
+# Filter by VID (e.g., Adafruit devices only)
+python3 scripts/serial_monitor.py --vid 239a
+```
+
+The script handles port disappear/reappear gracefully — essential for flash + reboot workflows.
+
+## SAMD51 Flashing (PyPortal)
+
+**Do NOT use bossac for SAMD51** — v1.9.1 (Debian repo) fails with "SAM-BA operation failed".
+
+Use UF2 drag-and-drop instead (requires root on rpi-displays for stty permissions):
+
+```bash
+# SSH as root to rpi-displays
+ssh root@192.168.1.234
+
+# Enter UF2 bootloader via 1200-baud reset
+stty -F /dev/ttyACM0 1200 cs8 -cstopb -parenb
+sleep 3
+
+# Mount and flash
+mount -t vfat /dev/sda /mnt/pyportal
+cp firmware.uf2 /mnt/pyportal/flash.uf2
+sync && sync
+# FAT errors on umount are expected — bootloader drops drive mid-flash
+```
+
 ## Hardware Reference
 
 See `references/hardware.md` for:
 - Full bench hardware map (rpi-displays, ProtoMQ Pi 5, USB hub, solenoid wiring)
 - Pico VID/PID table for application vs BOOTSEL mode
+- SAMD51/PyPortal VID/PID table and firmware compatibility
 - Tool installation (picotool, udev rules)
 - Common failure modes and fixes
 
 ## Agent Notes
 
 - **Never simulate hardware** — always use the real device; if it's not responding, troubleshoot the physical setup (power cycle, check lsusb, try a different port)
+- **Root required on rpi-displays** for `stty` on /dev/ttyACM* — use `ssh root@192.168.1.234` (passwordless key auth from tachyon)
 - Run the script on `rpi-displays` (192.168.1.234) via SSH, or adapt for the local host if the DUT is connected directly
 - The script is self-contained; copy it to rpi-displays with `scp` if needed
 - Check `lsusb` output before and after each step to confirm enumeration changes
